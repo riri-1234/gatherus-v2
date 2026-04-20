@@ -86,10 +86,17 @@ const Profile = () => {
         .eq('status', 'confirmed')
         .lt('events.date_time', new Date().toISOString());
 
+      // Get events hosted count
+      const { count: hostedCount } = await supabase
+        .from('events')
+        .select('*', { count: 'exact', head: true })
+        .eq('host_id', profile.id);
+
       setStats({
         followers: followerCount || 0,
         following: followingCount || 0,
         eventsAttended: eventsCount || 0,
+        eventsHosted: hostedCount || 0,
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
