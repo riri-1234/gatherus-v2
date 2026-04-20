@@ -7,7 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
 import SwipeCard from '@/components/SwipeCard';
 import { Button } from '@/components/ui/button';
-import { FilterSheet, FilterState, defaultFilters } from '@/components/FilterSheet';
 import { RefreshCw, Sparkles, PartyPopper } from 'lucide-react';
 
 interface EventWithRelations {
@@ -39,27 +38,77 @@ interface EventWithRelations {
   } | null;
 }
 
+const WEEKLY_LIMIT = 7;
+
 const Activities = () => {
   const [events, setEvents] = useState<EventWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [filters, setFilters] = useState<FilterState>(defaultFilters);
+  const [weeklyCount, setWeeklyCount] = useState(0);
   const [mutualCounts, setMutualCounts] = useState<Record<string, number>>({});
   
   const { profile, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
+  // Get start of current week (Monday)
+  const getWeekStart = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(now.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    return monday.toISOString();
+  };
+
   useEffect(() => {
-    fetchEvents();
-  }, [profile, filters]);
+    if (profile) {
+      fetchWeeklySwipes();
+      fetchEvents();
+    }
+  }, [profile]);
+
+  const fetchWeeklySwipes = async () => {
+    if (!profile) return;
+    const weekStart = getWeekStart();
+    
+    const { count } = await supabase
+      .from('event_swipes')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', profile.id)
+      .gte('created_at', weekStart);
+    
+    setWeeklyCount(count || 0);
+  };
 
   const fetchEvents = async () => {
     setLoading(true);
     
     try {
-      // Fetch events with host and school info
-      let query = supabase
+      const weekStart = getWeekStart();
+      
+      // Get user's already swiped events
+      let swipedEventIds: string[] = [];
+      let followedIds: string[] = [];
+      
+      if (profile) {
+        const [swipesResult, followsResult] = await Promise.all([
+          supabase
+            .from('event_swipes')
+            .select('event_id')
+            .eq('user_id', profile.id),
+          supabase
+            .from('user_follows')
+            .select('following_id')
+            .eq('follower_id', profile.id),
+        ]);
+        
+        swipedEventIds = swipesResult.data?.map(s => s.event_id) || [];
+        followedIds = followsResult.data?.map(f => f.following_id) || [];
+      }
+
+      // Fetch upcoming events
+      const { data: eventsData, error } = await supabase
         .from('events')
         .select(`
           *,
@@ -70,68 +119,58 @@ const Activities = () => {
         .order('date_time', { ascending: true })
         .limit(50);
 
-      // Apply filters
-      if (filters.categories.length > 0) {
-        query = query.in('category', filters.categories as any);
-      }
-      if (filters.freeOnly) {
-        query = query.eq('is_free', true);
-      }
-      if (filters.openOnly) {
-        query = query.eq('access_type', 'open_rsvp');
-      }
-      if (filters.maxGroupSize) {
-        query = query.lte('capacity', filters.maxGroupSize);
-      }
-
-      const { data: eventsData, error } = await query;
-
       if (error) throw error;
 
-      // Get user's already swiped events to filter them out
-      let swipedEventIds: string[] = [];
-      if (profile) {
-        const { data: swipes } = await supabase
-          .from('event_swipes')
-          .select('event_id')
-          .eq('user_id', profile.id);
-        
-        if (swipes) {
-          swipedEventIds = swipes.map(s => s.event_id);
-        }
-
-        // Get followed users for mutual count
-        const { data: follows } = await supabase
-          .from('user_follows')
-          .select('following_id')
-          .eq('follower_id', profile.id);
-
-        if (follows && follows.length > 0) {
-          const followedIds = follows.map(f => f.following_id);
-          
-          // Get RSVPs from followed users
-          const { data: friendRsvps } = await supabase
-            .from('rsvps')
-            .select('event_id, user_id')
-            .in('user_id', followedIds)
-            .eq('status', 'confirmed');
-
-          if (friendRsvps) {
-            const counts: Record<string, number> = {};
-            friendRsvps.forEach(rsvp => {
-              counts[rsvp.event_id] = (counts[rsvp.event_id] || 0) + 1;
-            });
-            setMutualCounts(counts);
-          }
-        }
-      }
-
       // Filter out already swiped events
-      const filteredEvents = (eventsData || []).filter(
+      let filtered = (eventsData || []).filter(
         e => !swipedEventIds.includes(e.id)
       );
 
-      setEvents(filteredEvents as EventWithRelations[]);
+      // Personalize: score by interest overlap & friends attending
+      if (profile?.interests && profile.interests.length > 0) {
+        filtered = filtered.map(event => {
+          let score = 0;
+          // Boost events matching user interests via tags
+          if (event.tags) {
+            const overlap = event.tags.filter((t: string) => 
+              profile.interests.some(i => t.toLowerCase().includes(i.toLowerCase()))
+            ).length;
+            score += overlap * 10;
+          }
+          // Boost events from followed hosts
+          if (followedIds.includes(event.host_id)) {
+            score += 20;
+          }
+          // Boost trending
+          if (event.is_trending) score += 5;
+          return { ...event, _score: score };
+        }).sort((a: any, b: any) => b._score - a._score);
+      }
+
+      // Limit to 7 curated events for the week
+      const remaining = WEEKLY_LIMIT - (weeklyCount || 0);
+      const curated = filtered.slice(0, Math.max(remaining, 0));
+
+      // Get mutual counts for curated events
+      if (followedIds.length > 0 && curated.length > 0) {
+        const eventIds = curated.map(e => e.id);
+        const { data: friendRsvps } = await supabase
+          .from('rsvps')
+          .select('event_id, user_id')
+          .in('user_id', followedIds)
+          .in('event_id', eventIds)
+          .eq('status', 'confirmed');
+
+        if (friendRsvps) {
+          const counts: Record<string, number> = {};
+          friendRsvps.forEach(rsvp => {
+            counts[rsvp.event_id] = (counts[rsvp.event_id] || 0) + 1;
+          });
+          setMutualCounts(counts);
+        }
+      }
+
+      setEvents(curated as EventWithRelations[]);
       setCurrentIndex(0);
     } catch (error) {
       console.error('Error fetching events:', error);
@@ -150,14 +189,12 @@ const Activities = () => {
     if (!currentEvent || !profile) return;
 
     try {
-      // Record the swipe
       await supabase.from('event_swipes').insert({
         user_id: profile.id,
         event_id: currentEvent.id,
         swiped_right: direction === 'right',
       });
 
-      // If swiped right, create RSVP
       if (direction === 'right') {
         const { error: rsvpError } = await supabase.from('rsvps').insert({
           user_id: profile.id,
@@ -167,15 +204,13 @@ const Activities = () => {
 
         if (!rsvpError) {
           toast({
-            title: direction === 'right' ? '🎉 RSVP\'d!' : 'Skipped',
-            description: direction === 'right' 
-              ? `You're going to "${currentEvent.title}"!`
-              : 'Maybe next time!',
+            title: '🎉 RSVP\'d!',
+            description: `You're going to "${currentEvent.title}"!`,
           });
         }
       }
 
-      // Move to next card
+      setWeeklyCount(prev => prev + 1);
       setCurrentIndex(prev => prev + 1);
     } catch (error) {
       console.error('Error handling swipe:', error);
@@ -191,6 +226,7 @@ const Activities = () => {
 
   const currentEvent = events[currentIndex];
   const hasMoreEvents = currentIndex < events.length;
+  const weeklyRemaining = Math.max(WEEKLY_LIMIT - weeklyCount, 0);
 
   if (!user) {
     return (
@@ -219,12 +255,30 @@ const Activities = () => {
       {/* Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-lg border-b border-border">
         <div className="flex items-center justify-between px-4 h-14">
-          <h1 className="font-display text-xl font-bold">Activities</h1>
+          <div>
+            <h1 className="font-display text-xl font-bold">Your Weekly 7</h1>
+            <p className="text-xs text-muted-foreground">
+              {weeklyRemaining > 0 
+                ? `${weeklyRemaining} event${weeklyRemaining !== 1 ? 's' : ''} left this week`
+                : 'All caught up this week!'
+              }
+            </p>
+          </div>
           <div className="flex items-center gap-2">
+            {/* Weekly progress dots */}
+            <div className="flex gap-1">
+              {Array.from({ length: WEEKLY_LIMIT }).map((_, i) => (
+                <div
+                  key={i}
+                  className={`w-2 h-2 rounded-full transition-colors ${
+                    i < weeklyCount ? 'bg-primary' : 'bg-muted'
+                  }`}
+                />
+              ))}
+            </div>
             <Button variant="ghost" size="icon" onClick={fetchEvents}>
               <RefreshCw className="w-5 h-5" />
             </Button>
-            <FilterSheet filters={filters} onFiltersChange={setFilters} />
           </div>
         </div>
       </header>
@@ -234,7 +288,17 @@ const Activities = () => {
         {loading ? (
           <div className="flex flex-col items-center gap-4">
             <div className="w-12 h-12 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-            <p className="text-muted-foreground">Loading events...</p>
+            <p className="text-muted-foreground">Curating your events...</p>
+          </div>
+        ) : weeklyRemaining <= 0 ? (
+          <div className="flex flex-col items-center gap-4 px-8 text-center">
+            <div className="w-20 h-20 rounded-2xl bg-muted flex items-center justify-center">
+              <PartyPopper className="w-10 h-10 text-muted-foreground" />
+            </div>
+            <h2 className="font-display text-xl font-bold">You've seen all 7!</h2>
+            <p className="text-muted-foreground">
+              Come back next week for a fresh batch of curated events
+            </p>
           </div>
         ) : hasMoreEvents && currentEvent ? (
           <AnimatePresence mode="popLayout">
@@ -268,7 +332,7 @@ const Activities = () => {
         )}
 
         {/* Swipe Instructions */}
-        {hasMoreEvents && currentEvent && (
+        {hasMoreEvents && currentEvent && weeklyRemaining > 0 && (
           <div className="absolute bottom-4 left-0 right-0 flex justify-center gap-8 text-sm text-muted-foreground">
             <span>← Skip</span>
             <span>Tap for details</span>
