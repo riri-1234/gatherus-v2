@@ -65,8 +65,11 @@ const Activities = () => {
     if (profile) {
       fetchWeeklySwipes();
       fetchEvents();
+    } else if (user) {
+      // User is logged in but profile not loaded yet - stop loading
+      setLoading(false);
     }
-  }, [profile]);
+  }, [profile, user]);
 
   const fetchWeeklySwipes = async () => {
     if (!profile) return;
