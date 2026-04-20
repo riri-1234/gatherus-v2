@@ -335,7 +335,7 @@ const Profile = () => {
 
           {/* Stats */}
           <div className="mt-4 pt-4 border-t border-border">
-            <div className="grid grid-cols-3 gap-4 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center">
               <button 
                 onClick={() => {
                   setFollowersSheetTab('followers');
@@ -344,7 +344,7 @@ const Profile = () => {
                 className="hover:bg-muted/50 rounded-lg py-2 transition-colors"
               >
                 <p className="font-display text-xl font-bold">{stats.followers}</p>
-                <p className="text-xs text-muted-foreground">Followers</p>
+                <p className="text-[10px] text-muted-foreground">Followers</p>
               </button>
               <button 
                 onClick={() => {
@@ -354,11 +354,15 @@ const Profile = () => {
                 className="hover:bg-muted/50 rounded-lg py-2 transition-colors"
               >
                 <p className="font-display text-xl font-bold">{stats.following}</p>
-                <p className="text-xs text-muted-foreground">Following</p>
+                <p className="text-[10px] text-muted-foreground">Following</p>
               </button>
               <div className="py-2">
                 <p className="font-display text-xl font-bold">{stats.eventsAttended}</p>
-                <p className="text-xs text-muted-foreground">Events</p>
+                <p className="text-[10px] text-muted-foreground">Attended</p>
+              </div>
+              <div className="py-2">
+                <p className="font-display text-xl font-bold">{stats.eventsHosted}</p>
+                <p className="text-[10px] text-muted-foreground">Hosted</p>
               </div>
             </div>
           </div>
