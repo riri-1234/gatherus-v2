@@ -5,9 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import Activities from "./pages/Activities";
-import MyEvents from "./pages/MyEvents";
 import Post from "./pages/Post";
-import Feed from "./pages/Feed";
+import Social from "./pages/Social";
 import Profile from "./pages/Profile";
 import Auth from "./pages/Auth";
 import Onboarding from "./pages/Onboarding";
@@ -25,9 +24,8 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Activities />} />
-            <Route path="/my-events" element={<MyEvents />} />
             <Route path="/post" element={<Post />} />
-            <Route path="/feed" element={<Feed />} />
+            <Route path="/social" element={<Social />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/onboarding" element={<Onboarding />} />
