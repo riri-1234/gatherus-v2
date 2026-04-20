@@ -54,7 +54,7 @@ const Profile = () => {
     instagram_handle: profile?.instagram_handle || '',
   });
   const [saving, setSaving] = useState(false);
-  const [stats, setStats] = useState({ followers: 0, following: 0, eventsAttended: 0 });
+  const [stats, setStats] = useState({ followers: 0, following: 0, eventsAttended: 0, eventsHosted: 0 });
 
   useEffect(() => {
     if (profile) {
