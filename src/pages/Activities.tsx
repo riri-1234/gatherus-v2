@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
 import SwipeCard from '@/components/SwipeCard';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Sparkles, PartyPopper } from 'lucide-react';
+import { RefreshCw, Sparkles, PartyPopper, Undo2 } from 'lucide-react';
 
 interface EventWithRelations {
   id: string;
@@ -45,7 +45,13 @@ const Activities = () => {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [weeklyCount, setWeeklyCount] = useState(0);
+  const [rsvpCount, setRsvpCount] = useState(0);
   const [mutualCounts, setMutualCounts] = useState<Record<string, number>>({});
+  const [lastSwipe, setLastSwipe] = useState<{
+    event: EventWithRelations;
+    direction: 'left' | 'right';
+    index: number;
+  } | null>(null);
   
   const { profile, user } = useAuth();
   const navigate = useNavigate();
@@ -75,13 +81,21 @@ const Activities = () => {
     if (!profile) return;
     const weekStart = getWeekStart();
     
-    const { count } = await supabase
-      .from('event_swipes')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', profile.id)
-      .gte('created_at', weekStart);
-    
-    setWeeklyCount(count || 0);
+    const [{ count: swipeCount }, { count: rsvpTotal }] = await Promise.all([
+      supabase
+        .from('event_swipes')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .gte('created_at', weekStart),
+      supabase
+        .from('rsvps')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .gte('created_at', weekStart),
+    ]);
+
+    setWeeklyCount(swipeCount || 0);
+    setRsvpCount(rsvpTotal || 0);
   };
 
   const fetchEvents = async () => {
@@ -206,6 +220,7 @@ const Activities = () => {
         });
 
         if (!rsvpError) {
+          setRsvpCount(prev => prev + 1);
           toast({
             title: '🎉 RSVP\'d!',
             description: `You're going to "${currentEvent.title}"!`,
@@ -213,10 +228,57 @@ const Activities = () => {
         }
       }
 
+      setLastSwipe({ event: currentEvent, direction, index: currentIndex });
       setWeeklyCount(prev => prev + 1);
       setCurrentIndex(prev => prev + 1);
     } catch (error) {
       console.error('Error handling swipe:', error);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!lastSwipe || !profile) return;
+    const { event, direction, index } = lastSwipe;
+
+    try {
+      await supabase
+        .from('event_swipes')
+        .delete()
+        .eq('user_id', profile.id)
+        .eq('event_id', event.id);
+
+      if (direction === 'right') {
+        await supabase
+          .from('rsvps')
+          .delete()
+          .eq('user_id', profile.id)
+          .eq('event_id', event.id);
+        setRsvpCount(prev => Math.max(prev - 1, 0));
+      }
+
+      // Restore card into the deck at its prior position
+      setEvents(prev => {
+        const next = [...prev];
+        if (!next.find(e => e.id === event.id)) {
+          next.splice(index, 0, event);
+        }
+        return next;
+      });
+      setCurrentIndex(index);
+      setWeeklyCount(prev => Math.max(prev - 1, 0));
+      setLastSwipe(null);
+
+      toast({
+        title: 'Undone',
+        description: `Restored "${event.title}".`,
+      });
+    } catch (error) {
+      console.error('Error undoing swipe:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not undo',
+        description: 'Please try again.',
+      });
     }
   };
 
@@ -262,8 +324,8 @@ const Activities = () => {
             <h1 className="font-display text-xl font-bold">Your Weekly 7</h1>
             <p className="text-xs text-muted-foreground">
               {weeklyRemaining > 0 
-                ? `${weeklyRemaining} event${weeklyRemaining !== 1 ? 's' : ''} left this week`
-                : 'All caught up this week!'
+                ? `${weeklyRemaining} left · ${rsvpCount} RSVP${rsvpCount !== 1 ? 's' : ''} this week`
+                : `All caught up · ${rsvpCount} RSVP${rsvpCount !== 1 ? 's' : ''} this week`
               }
             </p>
           </div>
@@ -279,6 +341,15 @@ const Activities = () => {
                 />
               ))}
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleUndo}
+              disabled={!lastSwipe}
+              aria-label="Undo last swipe"
+            >
+              <Undo2 className="w-5 h-5" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={fetchEvents}>
               <RefreshCw className="w-5 h-5" />
             </Button>
