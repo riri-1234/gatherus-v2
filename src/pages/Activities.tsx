@@ -81,13 +81,21 @@ const Activities = () => {
     if (!profile) return;
     const weekStart = getWeekStart();
     
-    const { count } = await supabase
-      .from('event_swipes')
-      .select('*', { count: 'exact', head: true })
-      .eq('user_id', profile.id)
-      .gte('created_at', weekStart);
-    
-    setWeeklyCount(count || 0);
+    const [{ count: swipeCount }, { count: rsvpTotal }] = await Promise.all([
+      supabase
+        .from('event_swipes')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .gte('created_at', weekStart),
+      supabase
+        .from('rsvps')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .gte('created_at', weekStart),
+    ]);
+
+    setWeeklyCount(swipeCount || 0);
+    setRsvpCount(rsvpTotal || 0);
   };
 
   const fetchEvents = async () => {
