@@ -324,8 +324,8 @@ const Activities = () => {
             <h1 className="font-display text-xl font-bold">Your Weekly 7</h1>
             <p className="text-xs text-muted-foreground">
               {weeklyRemaining > 0 
-                ? `${weeklyRemaining} event${weeklyRemaining !== 1 ? 's' : ''} left this week`
-                : 'All caught up this week!'
+                ? `${weeklyRemaining} left · ${rsvpCount} RSVP${rsvpCount !== 1 ? 's' : ''} this week`
+                : `All caught up · ${rsvpCount} RSVP${rsvpCount !== 1 ? 's' : ''} this week`
               }
             </p>
           </div>
@@ -341,6 +341,15 @@ const Activities = () => {
                 />
               ))}
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleUndo}
+              disabled={!lastSwipe}
+              aria-label="Undo last swipe"
+            >
+              <Undo2 className="w-5 h-5" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={fetchEvents}>
               <RefreshCw className="w-5 h-5" />
             </Button>
