@@ -45,7 +45,13 @@ const Activities = () => {
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [weeklyCount, setWeeklyCount] = useState(0);
+  const [rsvpCount, setRsvpCount] = useState(0);
   const [mutualCounts, setMutualCounts] = useState<Record<string, number>>({});
+  const [lastSwipe, setLastSwipe] = useState<{
+    event: EventWithRelations;
+    direction: 'left' | 'right';
+    index: number;
+  } | null>(null);
   
   const { profile, user } = useAuth();
   const navigate = useNavigate();
