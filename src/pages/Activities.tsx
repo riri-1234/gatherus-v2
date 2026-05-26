@@ -206,6 +206,7 @@ const Activities = () => {
         });
 
         if (!rsvpError) {
+          setRsvpCount(prev => prev + 1);
           toast({
             title: '🎉 RSVP\'d!',
             description: `You're going to "${currentEvent.title}"!`,
@@ -213,10 +214,57 @@ const Activities = () => {
         }
       }
 
+      setLastSwipe({ event: currentEvent, direction, index: currentIndex });
       setWeeklyCount(prev => prev + 1);
       setCurrentIndex(prev => prev + 1);
     } catch (error) {
       console.error('Error handling swipe:', error);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!lastSwipe || !profile) return;
+    const { event, direction, index } = lastSwipe;
+
+    try {
+      await supabase
+        .from('event_swipes')
+        .delete()
+        .eq('user_id', profile.id)
+        .eq('event_id', event.id);
+
+      if (direction === 'right') {
+        await supabase
+          .from('rsvps')
+          .delete()
+          .eq('user_id', profile.id)
+          .eq('event_id', event.id);
+        setRsvpCount(prev => Math.max(prev - 1, 0));
+      }
+
+      // Restore card into the deck at its prior position
+      setEvents(prev => {
+        const next = [...prev];
+        if (!next.find(e => e.id === event.id)) {
+          next.splice(index, 0, event);
+        }
+        return next;
+      });
+      setCurrentIndex(index);
+      setWeeklyCount(prev => Math.max(prev - 1, 0));
+      setLastSwipe(null);
+
+      toast({
+        title: 'Undone',
+        description: `Restored "${event.title}".`,
+      });
+    } catch (error) {
+      console.error('Error undoing swipe:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Could not undo',
+        description: 'Please try again.',
+      });
     }
   };
 
