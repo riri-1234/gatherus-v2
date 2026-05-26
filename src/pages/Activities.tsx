@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import AppLayout from '@/components/AppLayout';
 import SwipeCard from '@/components/SwipeCard';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Sparkles, PartyPopper } from 'lucide-react';
+import { RefreshCw, Sparkles, PartyPopper, Undo2 } from 'lucide-react';
 
 interface EventWithRelations {
   id: string;
